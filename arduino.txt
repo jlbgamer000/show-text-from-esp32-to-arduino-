@@ -1,0 +1,118 @@
+#include <MCUFRIEND_kbv.h>
+#include <Fonts/FreeMono9pt7b.h> 
+
+MCUFRIEND_kbv tft;
+#define CTS_PIN A5
+
+void setup() {
+  Serial.begin(115200);
+  Serial.setTimeout(500); 
+  
+  pinMode(CTS_PIN, OUTPUT);
+  digitalWrite(CTS_PIN, LOW); 
+
+  uint16_t ID = tft.readID();
+  if (ID == 0xD3D3) ID = 0x9486;
+  tft.begin(ID);
+  tft.setRotation(0);
+  tft.fillScreen(0x0000);
+}
+
+void loop() {
+  digitalWrite(CTS_PIN, LOW); 
+
+  if (Serial.available() > 0) {
+    char cmd = Serial.read();
+
+    if (cmd == 'X') {
+      digitalWrite(CTS_PIN, HIGH); 
+      
+      String header = Serial.readStringUntil('\n');
+      char buf[60];
+      header.toCharArray(buf, sizeof(buf));
+
+      char* token = strtok(buf, ",");
+      int size = token ? atoi(token) : 1;
+      token = strtok(NULL, ",");
+      uint16_t fg = token ? (uint16_t)strtoul(token, NULL, 10) : 0xFFFF;
+      token = strtok(NULL, ",");
+      uint16_t bg = token ? (uint16_t)strtoul(token, NULL, 10) : 0x0000;
+      token = strtok(NULL, ",");
+      int debug = token ? atoi(token) : 1;
+      token = strtok(NULL, ",");
+      int linesToSend = token ? atoi(token) : 0;
+      token = strtok(NULL, ",");
+      int totalLines = token ? atoi(token) : 0;
+      token = strtok(NULL, ",");
+      int scrollOffset = token ? atoi(token) : 0;
+      token = strtok(NULL, ",");
+      int rot = token ? atoi(token) : 0;
+      token = strtok(NULL, ",");
+      int font = token ? atoi(token) : 0;
+      token = strtok(NULL, ",");
+      int forceClear = token ? atoi(token) : 1;
+
+      // Apply Inverted Rotations (2 and 3)
+      tft.setRotation(rot); 
+      int screenWidth = (rot == 1 || rot == 3) ? 320 : 240;
+      int screenHeight = (rot == 1 || rot == 3) ? 240 : 320;
+
+      if (font == 1) tft.setFont(&FreeMono9pt7b);
+      else tft.setFont(NULL);
+
+      if (forceClear == 1) {
+        tft.fillScreen(bg);
+      }
+      
+      tft.setTextWrap(false);
+      tft.setTextSize(size);
+      tft.setTextColor(fg, bg);
+      
+      int currentPixelY = 0;
+      int lineHeight = (font == 1) ? (16 * size) : (8 * size);
+
+      while (Serial.available() > 0) Serial.read(); 
+
+      for (int i = 0; i < linesToSend; i++) {
+        digitalWrite(CTS_PIN, LOW); 
+        unsigned long waitStart = millis();
+        while(Serial.available() == 0 && millis() - waitStart < 400) { }
+
+        String textLine = Serial.readStringUntil('\n');
+        digitalWrite(CTS_PIN, HIGH); 
+        
+        if (font == 1) {
+          tft.fillRect(0, currentPixelY, screenWidth, lineHeight, bg);
+          tft.setCursor(0, currentPixelY + (14 * size));
+        } else {
+          tft.setCursor(0, currentPixelY);
+        }
+        
+        tft.print(textLine);
+        currentPixelY += lineHeight;
+      }
+
+      // THE GHOST TEXT FIX: Wipe the rest of the text zone below the drawn lines
+      int hudHeight = (debug == 1) ? 20 : 0;
+      int maxTextY = screenHeight - hudHeight;
+      if (currentPixelY < maxTextY) {
+        tft.fillRect(0, currentPixelY, screenWidth, maxTextY - currentPixelY, bg);
+      }
+
+      if (debug == 1) {
+        tft.setFont(NULL); 
+        tft.fillRect(0, maxTextY, screenWidth, 20, 0x18E3);
+        tft.drawFastHLine(0, maxTextY, screenWidth, 0x7BEF);
+        tft.setTextSize(1);
+        tft.setTextColor(0xFFFF, 0x18E3);
+        tft.setCursor(4, maxTextY + 6);
+        tft.print("F:"); tft.print(font == 1 ? "MONO" : "DEF");
+        tft.print(" R:"); tft.print(rot);
+        tft.print(" L:"); tft.print(scrollOffset + 1);
+        tft.print("/"); tft.print(totalLines);
+      }
+      
+      digitalWrite(CTS_PIN, LOW);
+    }
+  }
+}
